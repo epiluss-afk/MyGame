@@ -1,5 +1,7 @@
-node_modules/
 .git/
+assets/images/
+node_modules/
+vendor/
 dist/
 build/
 cache/
@@ -18,5 +20,3 @@ logs/
 *.ogg
 *.mp4
 *.webm
-
-assets/images/
