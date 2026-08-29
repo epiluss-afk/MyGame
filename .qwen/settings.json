@@ -6,7 +6,8 @@
       "Bash(npm install)",
       "Bash(npx *)",
       "Bash(npm test)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git remote *)"
     ]
   },
   "$version": 4
