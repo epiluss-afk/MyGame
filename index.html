@@ -1,131 +1,1673 @@
-<!DOCTYPE html>\n<html lang='ko'>\n<head>\n<meta charset='UTF-8'>\n<title>MyGame</title>\n<style>\n body{margin:0;overflow:hidden;background:#111;}\n #hud{position:absolute;top:10px;left:10px;color:#fff;font-family:sans-serif;}\n</style>\n<script src='https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js'></script>\n</head>\n<body>\n<div id='hud'>FPS: <span id='fps'>0</span> | HP: <span id='hp'>100</span></div>\n<canvas id='glcanvas'></canvas>\n<script>\n// Scene\nconst canvas = document.getElementById('glcanvas');\nconst renderer = new THREE.WebGLRenderer({ canvas, antialias: true });\nrenderer.setSize(window.innerWidth, window.innerHeight);\nrenderer.setPixelRatio(window.devicePixelRatio);\n\nconst scene = new THREE.Scene();\nscene.fog = new THREE.Fog(0x111111, 20, 100);\n\n// Lights\nconst hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);\nhemi.intensity = 2.0;\nscene.add(hemi);\nconst amb = new THREE.AmbientLight(0xffffff, 0.3);\nscene.add(amb);\n\n// Camera\nconst camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);\ncamera.position.set(0, 6, 12);\nconst cameraOffset = new THREE.Vector3(0, 5, 10);\n\n// Player\nconst playerGeo = new THREE.BoxGeometry(1, 2, 1);\nconst playerMat = new THREE.MeshStandardMaterial({ color: 0x00aaee });\nconst player = new THREE.Mesh(playerGeo, playerMat);\nplayer.position.set(0, 1, 0);\nplayer.castShadow = true;\nscene.add(player);\n\n// Floor\nconst floorGeo = new THREE.PlaneGeometry(200, 200);\nconst floorMat = new THREE.MeshStandardMaterial({ color: 0x555555 });\nconst floor = new THREE.Mesh(floorGeo, floorMat);\nfloor.rotation.x = - Math.PI / 2;\nfloor.receiveShadow = true;\nscene.add(floor);\n\n// Obstacles\nconst blockGeo = new THREE.BoxGeometry(1, 1, 1);\nconst blockMat = new THREE.MeshStandardMaterial({ color: 0x777777 });\nconst blocks = [];\nfor (let i = -5; i <= 5; i++) {\n  for (let j = -5; j <= 5; j++) {\n    if (Math.random() < 0.2) {\n      const block = new THREE.Mesh(blockGeo, blockMat);\n      block.position.set(i, 0.5, j);\n      block.castShadow = true;\n      block.receiveShadow = true;\n      scene.add(block);\n      blocks.push(block);\n    }\n  }\n}\nconst blockRadius = Math.sqrt(0.5 * 0.5 * 3);\n\n// Movement\nconst keys = {};\ndocument.addEventListener('keydown', (e) => { keys[e.code] = true; });\ndocument.addEventListener('keyup', (e) => { keys[e.code] = false; });\n\nconst moveSpeed = 6;\nconst playerRadius = 1.5;\nconst minX = -50, maxX = 50, minZ = -50, maxZ = 50;\n\n// FPS\nconst fpsEl = document.getElementById('fps');\nlet fpsTime = 0, fpsCount = 0;\n\n// Resize\nwindow.addEventListener('resize', () => {\n  camera.aspect = window.innerWidth / window.innerHeight;\n  camera.updateProjectionMatrix();\n  renderer.setSize(window.innerWidth, window.innerHeight);\n});\n\n// Animation loop\nlet lastTime = 0;\nfunction animate(time) {\n  const delta = (time - lastTime) / 1000;\n  lastTime = time;\n  \n  // Movement vector\n  const dir = new THREE.Vector3();\n  if (keys['KeyW']) dir.z -= 1;\n  if (keys['KeyS']) dir.z += 1;\n  if (keys['KeyA']) dir.x -= 1;\n  if (keys['KeyD']) dir.x += 1;\n  if (dir.lengthSq() > 0) {\n    dir.normalize();\n    const next = player.position.clone().addScaledVector(dir, moveSpeed * delta);\n    let blocked = false;\n    if (next.x < minX || next.x > maxX || next.z < minZ || next.z > maxZ) blocked = true;\n    for (const block of blocks) {\n      if (next.distanceTo(block.position) < playerRadius + blockRadius) {\n        blocked = true;\n        break;\n      }\n    }\n    if (!blocked) player.position.copy(next);\n  }\n  \n  // Camera follow\n  const targetCamPos = player.position.clone().add(cameraOffset);\n  camera.position.lerp(targetCamPos, 0.1);\n  camera.lookAt(player.position);\n  \n  // FPS update\n  fpsTime += delta; fpsCount++;\n  if (fpsTime >= 1) { fpsEl.textContent = fpsCount; fpsTime = 0; fpsCount = 0; }\n  \n  renderer.render(scene, camera);\n  requestAnimationFrame(animate);\n}\nrequestAnimationFrame(animate);\n</script>\n<script>
-// Weapon, aiming and bullet system for Phase 2
-// This logic extends the existing Three.js scene created earlier.
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-// ---------- Aiming -----------------
-const mouse = new THREE.Vector2();
-const raycaster = new THREE.Raycaster();
-const gravityPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+<title>MyGame</title>
+
+<style>
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111;
+}
+
+#glcanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+
+  padding: 8px 12px;
+
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+
+  border-radius: 6px;
+
+  font-family:
+    Arial,
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 14px;
+
+  pointer-events: none;
+}
+
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+
+  width: 8px;
+  height: 8px;
+
+  margin-left: -4px;
+  margin-top: -4px;
+
+  border: 1px solid rgba(255,255,255,0.8);
+  border-radius: 50%;
+
+  pointer-events: none;
+
+  display: none;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+
+</head>
+
+<body>
+
+<div id="hud">
+  FPS:
+  <span id="fps">0</span>
+  |
+  HP:
+  <span id="hp">100</span>
+  |
+  Targets:
+  <span id="targetCount">0</span>
+</div>
+
+<div id="crosshair"></div>
+
+<canvas id="glcanvas"></canvas>
+
+<script>
+
+//
+// ============================================================
+// 기본 설정
+// ============================================================
+//
+
+const canvas =
+  document.getElementById("glcanvas");
+
+const fpsEl =
+  document.getElementById("fps");
+
+const hpEl =
+  document.getElementById("hp");
+
+const targetCountEl =
+  document.getElementById("targetCount");
+
+
+//
+// ============================================================
+// Renderer
+// ============================================================
+//
+
+const renderer =
+  new THREE.WebGLRenderer({
+    canvas: canvas,
+    antialias: true
+  });
+
+renderer.setSize(
+  window.innerWidth,
+  window.innerHeight
+);
+
+renderer.setPixelRatio(
+  Math.min(
+    window.devicePixelRatio,
+    2
+  )
+);
+
+//
+// 그림자 활성화
+//
+
+renderer.shadowMap.enabled = true;
+
+renderer.shadowMap.type =
+  THREE.PCFSoftShadowMap;
+
+
+//
+// ============================================================
+// Scene
+// ============================================================
+//
+
+const scene =
+  new THREE.Scene();
+
+scene.background =
+  new THREE.Color(0x111111);
+
+scene.fog =
+  new THREE.Fog(
+    0x111111,
+    30,
+    100
+  );
+
+
+//
+// ============================================================
+// Lights
+// ============================================================
+//
+
+const hemi =
+  new THREE.HemisphereLight(
+    0xffffff,
+    0x444444,
+    1.5
+  );
+
+scene.add(hemi);
+
+
+const ambient =
+  new THREE.AmbientLight(
+    0xffffff,
+    0.25
+  );
+
+scene.add(ambient);
+
+
+//
+// 태양광
+//
+
+const sun =
+  new THREE.DirectionalLight(
+    0xffffff,
+    1.5
+  );
+
+sun.position.set(
+  10,
+  20,
+  10
+);
+
+sun.castShadow = true;
+
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+
+sun.shadow.camera.left = -30;
+sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30;
+sun.shadow.camera.bottom = -30;
+
+scene.add(sun);
+
+
+//
+// ============================================================
+// Camera
+// ============================================================
+//
+
+const camera =
+  new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth /
+      window.innerHeight,
+    0.1,
+    200
+  );
+
+camera.position.set(
+  0,
+  7,
+  12
+);
+
+const cameraOffset =
+  new THREE.Vector3(
+    0,
+    6,
+    10
+  );
+
+
+//
+// ============================================================
+// Floor
+// ============================================================
+//
+
+const floorGeo =
+  new THREE.PlaneGeometry(
+    200,
+    200
+  );
+
+const floorMat =
+  new THREE.MeshStandardMaterial({
+    color: 0x444444
+  });
+
+const floor =
+  new THREE.Mesh(
+    floorGeo,
+    floorMat
+  );
+
+floor.rotation.x =
+  -Math.PI / 2;
+
+floor.receiveShadow = true;
+
+scene.add(floor);
+
+
+//
+// ============================================================
+// Grid
+// ============================================================
+//
+
+const grid =
+  new THREE.GridHelper(
+    100,
+    100,
+    0x333333,
+    0x222222
+  );
+
+grid.position.y = 0.01;
+
+scene.add(grid);
+
+
+//
+// ============================================================
+// Player
+// ============================================================
+//
+
+const player =
+  new THREE.Group();
+
+player.position.set(
+  0,
+  0,
+  0
+);
+
+scene.add(player);
+
+
+//
+// 몸통
+//
+
+const bodyGeo =
+  new THREE.BoxGeometry(
+    1,
+    2,
+    1
+  );
+
+const bodyMat =
+  new THREE.MeshStandardMaterial({
+    color: 0x00aaee
+  });
+
+const body =
+  new THREE.Mesh(
+    bodyGeo,
+    bodyMat
+  );
+
+body.position.y = 1;
+
+body.castShadow = true;
+body.receiveShadow = true;
+
+player.add(body);
+
+
+//
+// ============================================================
+// Gun
+// ============================================================
+//
+
+const gunGroup =
+  new THREE.Group();
+
+gunGroup.position.set(
+  0.45,
+  1.15,
+  -0.25
+);
+
+player.add(gunGroup);
+
+
+//
+// 총 몸체
+//
+
+const gunBodyGeo =
+  new THREE.BoxGeometry(
+    0.25,
+    0.25,
+    1.4
+  );
+
+const gunBodyMat =
+  new THREE.MeshStandardMaterial({
+    color: 0x222222,
+    metalness: 0.7,
+    roughness: 0.3
+  });
+
+const gunBody =
+  new THREE.Mesh(
+    gunBodyGeo,
+    gunBodyMat
+  );
+
+gunBody.position.z = -0.45;
+
+gunBody.castShadow = true;
+
+gunGroup.add(gunBody);
+
+
+//
+// 총구 위치
+//
+
+const muzzle =
+  new THREE.Object3D();
+
+muzzle.position.set(
+  0,
+  0,
+  -1.2
+);
+
+gunGroup.add(muzzle);
+
+
+//
+// ============================================================
+// Player settings
+// ============================================================
+//
+
+let playerHP = 100;
+
+const moveSpeed = 6;
+
+const playerRadius = 0.55;
+
+const minX = -50;
+const maxX = 50;
+
+const minZ = -50;
+const maxZ = 50;
+
+
+//
+// ============================================================
+// Obstacles
+// ============================================================
+//
+
+const blockGeo =
+  new THREE.BoxGeometry(
+    1,
+    1,
+    1
+  );
+
+const blockMat =
+  new THREE.MeshStandardMaterial({
+    color: 0x777777
+  });
+
+const blocks = [];
+
+
+//
+// 플레이어 시작 지점 주변에는
+// 장애물을 생성하지 않는다.
+//
+
+for (
+  let x = -10;
+  x <= 10;
+  x += 2
+) {
+
+  for (
+    let z = -5;
+    z <= 8;
+    z += 2
+  ) {
+
+    const spawnDistance =
+      Math.sqrt(
+        x * x +
+        z * z
+      );
+
+    if (
+      Math.random() < 0.18 &&
+      spawnDistance > 4
+    ) {
+
+      const block =
+        new THREE.Mesh(
+          blockGeo,
+          blockMat
+        );
+
+      block.position.set(
+        x,
+        0.5,
+        z
+      );
+
+      block.castShadow = true;
+      block.receiveShadow = true;
+
+      scene.add(block);
+
+      blocks.push(block);
+
+    }
+
+  }
+
+}
+
+const blockRadius = 0.65;
+
+
+//
+// ============================================================
+// Keyboard
+// ============================================================
+//
+
+const keys = {};
+
+document.addEventListener(
+  "keydown",
+  function (event) {
+
+    keys[event.code] = true;
+
+  }
+);
+
+document.addEventListener(
+  "keyup",
+  function (event) {
+
+    keys[event.code] = false;
+
+  }
+);
+
+
+//
+// ============================================================
+// Mouse aiming
+// ============================================================
+//
+
+const mouse =
+  new THREE.Vector2();
+
+const raycaster =
+  new THREE.Raycaster();
+
+
+//
+// 바닥 평면
+//
+
+const aimPlane =
+  new THREE.Plane(
+    new THREE.Vector3(
+      0,
+      1,
+      0
+    ),
+    0
+  );
+
+
+//
+// 기본 조준 방향
+//
+
+const aimDirection =
+  new THREE.Vector3(
+    0,
+    0,
+    -1
+  );
+
+
+//
+// 마우스 위치
+//
 
 function onMouseMove(event) {
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const intersection = new THREE.Vector3();
-  raycaster.ray.intersectPlane(gravityPlane, intersection);
-  if (intersection) {
-    const dir = intersection.clone().sub(player.position).normalize();
-    aimDirection = dir;
-    const angle = Math.atan2(dir.x, dir.z);
-    player.rotation.y = angle;
-  }
-}
-document.addEventListener('mousemove', onMouseMove, false);
 
-// ---------- Weapon and firing -----------------
+  mouse.x =
+    (
+      event.clientX /
+      window.innerWidth
+    ) * 2 - 1;
+
+  mouse.y =
+    -(
+      event.clientY /
+      window.innerHeight
+    ) * 2 + 1;
+
+
+  raycaster.setFromCamera(
+    mouse,
+    camera
+  );
+
+
+  const intersection =
+    new THREE.Vector3();
+
+
+  const hit =
+    raycaster.ray.intersectPlane(
+      aimPlane,
+      intersection
+    );
+
+
+  if (!hit) {
+    return;
+  }
+
+
+  //
+  // 플레이어에서 마우스 방향
+  //
+
+  const dir =
+    intersection
+      .clone()
+      .sub(player.position);
+
+
+  //
+  // 수평 조준
+  //
+
+  dir.y = 0;
+
+
+  if (
+    dir.lengthSq() <
+    0.0001
+  ) {
+
+    return;
+
+  }
+
+
+  dir.normalize();
+
+  aimDirection.copy(dir);
+
+
+  //
+  // Three.js 기본 forward가
+  // -Z 방향이므로 atan2 계산
+  //
+
+  const angle =
+    Math.atan2(
+      -dir.x,
+      -dir.z
+    );
+
+
+  player.rotation.y =
+    angle;
+
+}
+
+document.addEventListener(
+  "mousemove",
+  onMouseMove
+);
+
+
+//
+// ============================================================
+// Weapon settings
+// ============================================================
+//
+
 const fireRate = 5;
-const fireCooldownTime = 1 / fireRate;
+
+const fireCooldownTime =
+  1 / fireRate;
+
 let fireCooldown = 0;
-const baseDamage = 20;
+
 let mouseDown = false;
 
-const bulletGeom = new THREE.SphereGeometry(0.1, 8, 8);
-const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+const baseDamage = 20;
+
+
+//
+// ============================================================
+// Bullets
+// ============================================================
+//
+
+const bulletGeo =
+  new THREE.SphereGeometry(
+    0.12,
+    8,
+    8
+  );
+
+const bulletMat =
+  new THREE.MeshBasicMaterial({
+    color: 0xffff00
+  });
+
 const bullets = [];
 
-const targetGeom = new THREE.BoxGeometry(1, 1, 1);
-const targetMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+
+//
+// ============================================================
+// Targets
+// ============================================================
+//
+
+const targetGeo =
+  new THREE.BoxGeometry(
+    1,
+    2,
+    1
+  );
+
 const targets = [];
 
-for (let i = 0; i < 5; i++) {
-  const pos = new THREE.Vector3(i * 3 - 6, 0.5, -10);
-  const mesh = new THREE.Mesh(targetGeom, targetMat.clone());
-  mesh.position.copy(pos);
-  mesh.userData = { hp: 100, maxHp: 100 };
-  scene.add(mesh);
-  targets.push(mesh);
+
+//
+// 적 5개 생성
+//
+
+for (
+  let i = 0;
+  i < 5;
+  i++
+) {
+
+  const targetMat =
+    new THREE.MeshStandardMaterial({
+      color: 0xff3333
+    });
+
+
+  const target =
+    new THREE.Mesh(
+      targetGeo,
+      targetMat
+    );
+
+
+  target.position.set(
+    i * 3 - 6,
+    1,
+    -12
+  );
+
+
+  target.userData.hp = 100;
+
+  target.userData.maxHp = 100;
+
+
+  target.castShadow = true;
+
+  target.receiveShadow = true;
+
+
+  scene.add(target);
+
+  targets.push(target);
+
 }
+
+
+//
+// HUD target count
+//
+
+function updateTargetCount() {
+
+  targetCountEl.textContent =
+    targets.length;
+
+}
+
+updateTargetCount();
+
+
+//
+// ============================================================
+// Mouse fire
+// ============================================================
+//
+
+document.addEventListener(
+  "mousedown",
+  function (event) {
+
+    if (
+      event.button === 0
+    ) {
+
+      mouseDown = true;
+
+      //
+      // 클릭 즉시 첫 발
+      //
+
+      fireCooldown = 0;
+
+    }
+
+  }
+);
+
+
+document.addEventListener(
+  "mouseup",
+  function (event) {
+
+    if (
+      event.button === 0
+    ) {
+
+      mouseDown = false;
+
+    }
+
+  }
+);
+
+
+//
+// 브라우저 밖으로 마우스가 나갔을 때
+//
+
+window.addEventListener(
+  "blur",
+  function () {
+
+    mouseDown = false;
+
+  }
+);
+
+
+//
+// ============================================================
+// Muzzle flash
+// ============================================================
+//
 
 function createMuzzleFlash(position) {
-  const flashGeom = new THREE.SphereGeometry(0.2, 8, 8);
-  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const flashMesh = new THREE.Mesh(flashGeom, flashMat);
-  flashMesh.position.copy(position);
-  scene.add(flashMesh);
-  setTimeout(() => { scene.remove(flashMesh); }, 50);
-}
-document.addEventListener('mousedown', (e) => { if (e.button === 0) mouseDown = true; }, false);
-document.addEventListener('mouseup', (e) => { if (e.button === 0) mouseDown = false; }, false);
 
-function fire(direction, damage = baseDamage, options = {}) {
-  const forward = direction.clone();
-  const muzzleOffset = forward.clone().multiplyScalar(1.0);
-  const muzzlePos = player.position.clone().add(new THREE.Vector3(0, 1, 0)).add(muzzleOffset);
-  const bulletMesh = new THREE.Mesh(bulletGeom, bulletMat);
-  bulletMesh.position.copy(muzzlePos);
-  scene.add(bulletMesh);
-  bullets.push({mesh: bulletMesh, direction: forward, speed: 30, damage: damage, lifetime: 3, created: performance.now() / 1000, maxPierce: options.maxPierce || 0, hitEnemies: [], pierceCount: 0});
-  createMuzzleFlash(muzzlePos);
+  const geometry =
+    new THREE.SphereGeometry(
+      0.22,
+      8,
+      8
+    );
+
+  const material =
+    new THREE.MeshBasicMaterial({
+      color: 0xffee88
+    });
+
+
+  const flash =
+    new THREE.Mesh(
+      geometry,
+      material
+    );
+
+
+  flash.position.copy(
+    position
+  );
+
+
+  scene.add(flash);
+
+
+  setTimeout(
+    function () {
+
+      scene.remove(flash);
+
+      geometry.dispose();
+
+      material.dispose();
+
+    },
+    50
+  );
+
 }
 
-let aimDirection = new THREE.Vector3(0, 0, 1);
+
+//
+// ============================================================
+// Fire
+// ============================================================
+//
+
+function fire(
+  direction = aimDirection,
+  damage = baseDamage,
+  options = {}
+) {
+
+  //
+  // 방향 복사
+  //
+
+  const forward =
+    direction.clone();
+
+
+  forward.y = 0;
+
+  forward.normalize();
+
+
+  //
+  // 총구의 실제 월드 위치
+  //
+
+  const muzzlePosition =
+    new THREE.Vector3();
+
+
+  muzzle.getWorldPosition(
+    muzzlePosition
+  );
+
+
+  //
+  // 총알 생성
+  //
+
+  const bulletMesh =
+    new THREE.Mesh(
+      bulletGeo,
+      bulletMat
+    );
+
+
+  bulletMesh.position.copy(
+    muzzlePosition
+  );
+
+
+  scene.add(
+    bulletMesh
+  );
+
+
+  bullets.push({
+
+    mesh:
+      bulletMesh,
+
+    direction:
+      forward,
+
+    speed:
+      30,
+
+    damage:
+      damage,
+
+    lifetime:
+      3,
+
+    created:
+      performance.now() / 1000,
+
+    maxPierce:
+      options.maxPierce || 0,
+
+    pierceCount:
+      0,
+
+    hitEnemies:
+      new Set()
+
+  });
+
+
+  createMuzzleFlash(
+    muzzlePosition
+  );
+
+}
+
+
+//
+// ============================================================
+// Target hit effect
+// ============================================================
+//
+
+function flashTarget(target) {
+
+  const oldColor =
+    target.material.color.clone();
+
+
+  target.material.color.set(
+    0xffff00
+  );
+
+
+  setTimeout(
+    function () {
+
+      //
+      // 이미 제거된 적이라도
+      // material은 존재할 수 있음
+      //
+
+      if (
+        target.material
+      ) {
+
+        target.material.color.copy(
+          oldColor
+        );
+
+      }
+
+    },
+    80
+  );
+
+}
+
+
+//
+// ============================================================
+// Bullet update
+// ============================================================
+//
 
 function updateBullets(delta) {
-  const now = performance.now() / 1000;
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i];
-    b.mesh.position.add(b.direction.clone().multiplyScalar(b.speed * delta));
-    if (now - b.created > b.lifetime) { scene.remove(b.mesh); bullets.splice(i, 1); continue; }
-    for (let j = targets.length - 1; j >= 0; j--) {
-      const t = targets[j];
-      const dist = b.mesh.position.distanceTo(t.position);
-      if (dist < 0.6) {
-        t.userData.hp -= b.damage;
-        const originalColor = t.material.color.clone();
-        t.material.color.set(0xffff00);
-        setTimeout(() => { t.material.color.copy(originalColor); }, 100);
-        scene.remove(b.mesh);
-        bullets.splice(i, 1);
-        if (t.userData.hp <= 0) { scene.remove(t); targets.splice(j, 1); }
-        break;
-      }
+
+  const now =
+    performance.now() /
+    1000;
+
+
+  for (
+    let i =
+      bullets.length - 1;
+
+    i >= 0;
+
+    i--
+  ) {
+
+    const bullet =
+      bullets[i];
+
+
+    //
+    // 이동
+    //
+
+    bullet.mesh.position.addScaledVector(
+      bullet.direction,
+      bullet.speed *
+        delta
+    );
+
+
+    //
+    // 수명 종료
+    //
+
+    if (
+      now -
+      bullet.created >
+      bullet.lifetime
+    ) {
+
+      scene.remove(
+        bullet.mesh
+      );
+
+      bullets.splice(
+        i,
+        1
+      );
+
+      continue;
+
     }
+
+
+    let destroyBullet = false;
+
+
+    //
+    // 적 충돌
+    //
+
+    for (
+      let j =
+        targets.length - 1;
+
+      j >= 0;
+
+      j--
+    ) {
+
+      const target =
+        targets[j];
+
+
+      //
+      // 관통탄이 같은 적을
+      // 여러 번 맞추지 않도록 처리
+      //
+
+      if (
+        bullet.hitEnemies.has(
+          target.uuid
+        )
+      ) {
+
+        continue;
+
+      }
+
+
+      const distance =
+        bullet.mesh.position.distanceTo(
+          target.position
+        );
+
+
+      if (
+        distance < 0.8
+      ) {
+
+        bullet.hitEnemies.add(
+          target.uuid
+        );
+
+
+        target.userData.hp -=
+          bullet.damage;
+
+
+        flashTarget(
+          target
+        );
+
+
+        //
+        // 적 사망
+        //
+
+        if (
+          target.userData.hp <=
+          0
+        ) {
+
+          scene.remove(
+            target
+          );
+
+          targets.splice(
+            j,
+            1
+          );
+
+          updateTargetCount();
+
+        }
+
+
+        //
+        // 관통 여부
+        //
+
+        if (
+          bullet.pierceCount <
+          bullet.maxPierce
+        ) {
+
+          bullet.pierceCount++;
+
+        } else {
+
+          destroyBullet = true;
+
+          break;
+
+        }
+
+      }
+
+    }
+
+
+    //
+    // 총알 제거
+    //
+
+    if (
+      destroyBullet
+    ) {
+
+      scene.remove(
+        bullet.mesh
+      );
+
+      bullets.splice(
+        i,
+        1
+      );
+
+    }
+
   }
+
 }
 
-let lastTime = 0;
-function animate(time) {
-  const delta = (time - lastTime) / 1000;
-  lastTime = time;
-  const dir = new THREE.Vector3();
-  if (keys['KeyW']) dir.z -= 1;
-  if (keys['KeyS']) dir.z += 1;
-  if (keys['KeyA']) dir.x -= 1;
-  if (keys['KeyD']) dir.x += 1;
-  if (dir.lengthSq() > 0) {
-    dir.normalize();
-    const next = player.position.clone().addScaledVector(dir, moveSpeed * delta);
-    let blocked = false;
-    if (next.x < minX || next.x > maxX || next.z < minZ || next.z > maxZ) blocked = true;
-    for (const block of blocks) {
-      if (next.distanceTo(block.position) < playerRadius + blockRadius) { blocked = true; break; }
+
+//
+// ============================================================
+// Collision helper
+// ============================================================
+//
+
+function collidesWithObstacle(
+  position
+) {
+
+  for (
+    const block
+    of blocks
+  ) {
+
+    const dx =
+      position.x -
+      block.position.x;
+
+    const dz =
+      position.z -
+      block.position.z;
+
+
+    const distanceSquared =
+      dx * dx +
+      dz * dz;
+
+
+    const minDistance =
+      playerRadius +
+      blockRadius;
+
+
+    if (
+      distanceSquared <
+      minDistance *
+      minDistance
+    ) {
+
+      return true;
+
     }
-    if (!blocked) player.position.copy(next);
+
   }
-  const targetCamPos = player.position.clone().add(cameraOffset);
-  camera.position.lerp(targetCamPos, 0.1);
-  camera.lookAt(player.position);
-  fpsTime += delta; fpsCount++;
-  if (fpsTime >= 1) { fpsEl.textContent = fpsCount; fpsTime = 0; fpsCount = 0; }
-  updateBullets(delta);
-  if (mouseDown) {
-    fireCooldown -= delta;
-    if (fireCooldown <= 0) { fire(); fireCooldown = fireCooldownTime; }
-  }
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
+
+
+  return false;
+
 }
-lastTime = performance.now();
-requestAnimationFrame(animate);
+
+
+//
+// ============================================================
+// Player movement
+// ============================================================
+//
+
+function updatePlayer(
+  delta
+) {
+
+  const direction =
+    new THREE.Vector3();
+
+
+  if (
+    keys["KeyW"]
+  ) {
+
+    direction.z -= 1;
+
+  }
+
+
+  if (
+    keys["KeyS"]
+  ) {
+
+    direction.z += 1;
+
+  }
+
+
+  if (
+    keys["KeyA"]
+  ) {
+
+    direction.x -= 1;
+
+  }
+
+
+  if (
+    keys["KeyD"]
+  ) {
+
+    direction.x += 1;
+
+  }
+
+
+  if (
+    direction.lengthSq() ===
+    0
+  ) {
+
+    return;
+
+  }
+
+
+  direction.normalize();
+
+
+  const distance =
+    moveSpeed *
+    delta;
+
+
+  //
+  // X축 먼저 이동
+  //
+
+  const nextX =
+    player.position.clone();
+
+
+  nextX.x +=
+    direction.x *
+    distance;
+
+
+  if (
+    nextX.x >= minX &&
+    nextX.x <= maxX &&
+    !collidesWithObstacle(
+      nextX
+    )
+  ) {
+
+    player.position.x =
+      nextX.x;
+
+  }
+
+
+  //
+  // Z축 이동
+  //
+  // 이렇게 분리하면 벽에
+  // 걸렸을 때 미끄러질 수 있다.
+  //
+
+  const nextZ =
+    player.position.clone();
+
+
+  nextZ.z +=
+    direction.z *
+    distance;
+
+
+  if (
+    nextZ.z >= minZ &&
+    nextZ.z <= maxZ &&
+    !collidesWithObstacle(
+      nextZ
+    )
+  ) {
+
+    player.position.z =
+      nextZ.z;
+
+  }
+
+}
+
+
+//
+// ============================================================
+// Camera follow
+// ============================================================
+//
+
+function updateCamera() {
+
+  const targetPosition =
+    player.position
+      .clone()
+      .add(
+        cameraOffset
+      );
+
+
+  camera.position.lerp(
+    targetPosition,
+    0.12
+  );
+
+
+  const lookAtPosition =
+    player.position.clone();
+
+
+  lookAtPosition.y =
+    0.8;
+
+
+  camera.lookAt(
+    lookAtPosition
+  );
+
+}
+
+
+//
+// ============================================================
+// Weapon update
+// ============================================================
+//
+
+function updateWeapon(
+  delta
+) {
+
+  if (
+    fireCooldown >
+    0
+  ) {
+
+    fireCooldown -=
+      delta;
+
+  }
+
+
+  if (
+    mouseDown &&
+    fireCooldown <=
+    0
+  ) {
+
+    //
+    // 핵심 수정
+    //
+    // fire()에 현재
+    // aimDirection 전달
+    //
+
+    fire(
+      aimDirection
+    );
+
+
+    fireCooldown =
+      fireCooldownTime;
+
+  }
+
+}
+
+
+//
+// ============================================================
+// FPS
+// ============================================================
+//
+
+let fpsTime = 0;
+
+let fpsCount = 0;
+
+
+function updateFPS(
+  delta
+) {
+
+  fpsTime +=
+    delta;
+
+  fpsCount++;
+
+
+  if (
+    fpsTime >= 1
+  ) {
+
+    fpsEl.textContent =
+      fpsCount;
+
+
+    fpsTime = 0;
+
+    fpsCount = 0;
+
+  }
+
+}
+
+
+//
+// ============================================================
+// Resize
+// ============================================================
+//
+
+window.addEventListener(
+  "resize",
+  function () {
+
+    camera.aspect =
+      window.innerWidth /
+      window.innerHeight;
+
+
+    camera.updateProjectionMatrix();
+
+
+    renderer.setSize(
+      window.innerWidth,
+      window.innerHeight
+    );
+
+
+    renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio,
+        2
+      )
+    );
+
+  }
+);
+
+
+//
+// ============================================================
+// Main animation loop
+// ============================================================
+//
+
+let lastTime =
+  performance.now();
+
+
+function animate(time) {
+
+  //
+  // Delta Time
+  //
+
+  let delta =
+    (
+      time -
+      lastTime
+    ) /
+    1000;
+
+
+  lastTime =
+    time;
+
+
+  //
+  // 브라우저 탭을 오래 벗어났다가
+  // 돌아왔을 때 캐릭터 순간이동 방지
+  //
+
+  delta =
+    Math.min(
+      delta,
+      0.05
+    );
+
+
+  //
+  // 시스템 업데이트
+  //
+
+  updatePlayer(
+    delta
+  );
+
+
+  updateWeapon(
+    delta
+  );
+
+
+  updateBullets(
+    delta
+  );
+
+
+  updateCamera();
+
+
+  updateFPS(
+    delta
+  );
+
+
+  //
+  // HUD
+  //
+
+  hpEl.textContent =
+    Math.max(
+      0,
+      Math.floor(
+        playerHP
+      )
+    );
+
+
+  //
+  // 렌더링
+  //
+
+  renderer.render(
+    scene,
+    camera
+  );
+
+
+  requestAnimationFrame(
+    animate
+  );
+
+}
+
+
+//
+// ============================================================
+// Start
+// ============================================================
+//
+
+requestAnimationFrame(
+  animate
+);
+
 </script>
-</body>\n</html>
+
+</body>
+</html>

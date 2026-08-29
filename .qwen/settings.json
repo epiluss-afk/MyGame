@@ -7,7 +7,13 @@
       "Bash(npx *)",
       "Bash(npm test)",
       "Bash(git push *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(node *)",
+      "Bash(package.json)",
+      "Bash(npm run *)",
+      "Bash(npm *)",
+      "Bash(tasklist *)",
+      "Bash(curl *)"
     ]
   },
   "$version": 4
