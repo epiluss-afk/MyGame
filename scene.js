@@ -20,15 +20,23 @@ if (typeof canvas.getContext !== 'function') {
 
 // Initialize renderer with fallback in test environment
 let renderer;
+// Attempt to create a real WebGL renderer only if a context is available
+let context;
 try {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  context = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
 } catch (e) {
+  context = null;
+}
+if (context) {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} else {
   renderer = {
     setSize: () => {},
     setPixelRatio: () => {},
     domElement: canvas
   };
 }
+
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x111111, 20, 100);
