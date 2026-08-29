@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='UTF-8'>
+<title>MyGame</title>
+<style>
+ body{margin:0;overflow:hidden;background:#111;}
+ #hud{position:absolute;top:10px;left:10px;color:#fff;font-family:sans-serif;}
+</style>
+<script src='https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js'></script>
+</head>
+<body>
+<div id='hud'>FPS: <span id='fps'>0</span> | HP: <span id='hp'>100</span></div>
+<canvas id='glcanvas'></canvas>
+<script>
+// Scene
+const canvas = document.getElementById('glcanvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x111111, 20, 100);
+
+// Lights
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
+hemi.intensity = 2.0;
+scene.add(hemi);
+const amb = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(amb);
+
+// Camera
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
+window.camera = camera;
+camera.position.set(0, 6, 12);
+const cameraOffset = new THREE.Vector3(0, 5, 10);
+
+// Player
+const playerGeo = new THREE.BoxGeometry(1, 2, 1);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0x00aaee });
+const player = new THREE.Mesh(playerGeo, playerMat);
+player.position.set(0, 1, 0);
+player.castShadow = true;
+scene.add(player);
+
+// Floor
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = - Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Obstacles
+const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+const blockMat = new THREE.MeshStandardMaterial({ color: 0x777777 });
+const blocks = [];
+for (let i = -5; i <= 5; i++) {
+  for (let j = -5; j <= 5; j++) {
+    if (Math.random() < 0.2) {
+      const block = new THREE.Mesh(blockGeo, blockMat);
+      block.position.set(i, 0.5, j);
+      block.castShadow = true;
+      block.receiveShadow = true;
+      scene.add(block);
+      blocks.push(block);
+    }
+  }
+}
+const blockRadius = Math.sqrt(0.5 * 0.5 * 3);
+
+// Movement
+const keys = {};
+document.addEventListener('keydown', (e) => { keys[e.code] = true; });
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+const moveSpeed = 6;
+const playerRadius = 1.5;
+const minX = -50, maxX = 50, minZ = -50, maxZ = 50;
+
+// FPS
+const fpsEl = document.getElementById('fps');
+let fpsTime = 0, fpsCount = 0;
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+<script>
+// Weapon, aiming and bullet system for Phase 2
+// This logic extends the existing Three.js scene created earlier.
+
+// ---------- Aiming -----------------
+const mouse = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
+const gravityPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function onMouseMove(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersection = new THREE.Vector3();
+  raycaster.ray.intersectPlane(gravityPlane, intersection);
+  if (intersection) {
+    const dir = intersection.clone().sub(player.position).normalize();
+    aimDirection = dir;
+    const angle = Math.atan2(dir.x, dir.z);
+    player.rotation.y = angle;
+  }
+}
+document.addEventListener('mousemove', onMouseMove, false);
+
+// ---------- Weapon and firing -----------------
+const fireRate = 5;
+const fireCooldownTime = 1 / fireRate;
+let fireCooldown = 0;
+const baseDamage = 20;
+let mouseDown = false;
+
+const bulletGeom = new THREE.SphereGeometry(0.1, 8, 8);
+const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+const bullets = [];
+
+const targetGeom = new THREE.BoxGeometry(1, 1, 1);
+const targetMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+const targets = [];
+
+for (let i = 0; i < 5; i++) {
+  const pos = new THREE.Vector3(i * 3 - 6, 0.5, -10);
+  const mesh = new THREE.Mesh(targetGeom, targetMat.clone());
+  mesh.position.copy(pos);
+  mesh.userData = { hp: 100, maxHp: 100 };
+  scene.add(mesh);
+  targets.push(mesh);
+}
+
+function createMuzzleFlash(position) {
+  const flashGeom = new THREE.SphereGeometry(0.2, 8, 8);
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const flashMesh = new THREE.Mesh(flashGeom, flashMat);
+  flashMesh.position.copy(position);
+  scene.add(flashMesh);
+  setTimeout(() => { scene.remove(flashMesh); }, 50);
+}
+document.addEventListener('mousedown', (e) => { if (e.button === 0) mouseDown = true; }, false);
+document.addEventListener('mouseup', (e) => { if (e.button === 0) mouseDown = false; }, false);
+
+function fire(direction, damage = baseDamage, options = {}) {
+  const forward = direction.clone();
+  const muzzleOffset = forward.clone().multiplyScalar(1.0);
+  const muzzlePos = player.position.clone().add(new THREE.Vector3(0, 1, 0)).add(muzzleOffset);
+  const bulletMesh = new THREE.Mesh(bulletGeom, bulletMat);
+  bulletMesh.position.copy(muzzlePos);
+  scene.add(bulletMesh);
+  bullets.push({mesh: bulletMesh, direction: forward, speed: 30, damage: damage, lifetime: 3, created: performance.now() / 1000, maxPierce: options.maxPierce || 0, hitEnemies: [], pierceCount: 0});
+  createMuzzleFlash(muzzlePos);
+}
+
+let aimDirection = new THREE.Vector3(0, 0, 1);
+
+function updateBullets(delta) {
+  const now = performance.now() / 1000;
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.add(b.direction.clone().multiplyScalar(b.speed * delta));
+    if (now - b.created > b.lifetime) { scene.remove(b.mesh); bullets.splice(i, 1); continue; }
+    for (let j = targets.length - 1; j >= 0; j--) {
+      const t = targets[j];
+      const dist = b.mesh.position.distanceTo(t.position);
+      if (dist < 0.6) {
+        t.userData.hp -= b.damage;
+        const originalColor = t.material.color.clone();
+        t.material.color.set(0xffff00);
+        setTimeout(() => { t.material.color.copy(originalColor); }, 100);
+        scene.remove(b.mesh);
+        bullets.splice(i, 1);
+        if (t.userData.hp <= 0) { scene.remove(t); targets.splice(j, 1); }
+        break;
+      }
+    }
+  }
+}
+
+let lastTime = 0;
+function animate(time) {
+  const delta = (time - lastTime) / 1000;
+  lastTime = time;
+  const dir = new THREE.Vector3();
+  if (keys['KeyW']) dir.z -= 1;
+  if (keys['KeyS']) dir.z += 1;
+  if (keys['KeyA']) dir.x -= 1;
+  if (keys['KeyD']) dir.x += 1;
+  if (dir.lengthSq() > 0) {
+    dir.normalize();
+    const next = player.position.clone().addScaledVector(dir, moveSpeed * delta);
+    let blocked = false;
+    if (next.x < minX || next.x > maxX || next.z < minZ || next.z > maxZ) blocked = true;
+    for (const block of blocks) {
+      if (next.distanceTo(block.position) < playerRadius + blockRadius) { blocked = true; break; }
+    }
+    if (!blocked) player.position.copy(next);
+  }
+  const targetCamPos = player.position.clone().add(cameraOffset);
+  camera.position.lerp(targetCamPos, 0.1);
+  camera.lookAt(player.position);
+  fpsTime += delta; fpsCount++;
+  if (fpsTime >= 1) { fpsEl.textContent = fpsCount; fpsTime = 0; fpsCount = 0; }
+  updateBullets(delta);
+  if (mouseDown) {
+    fireCooldown -= delta;
+    if (fireCooldown <= 0) { fire(aimDirection); fireCooldown = fireCooldownTime; }
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+lastTime = performance.now();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

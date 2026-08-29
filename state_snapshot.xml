@@ -1,0 +1,66 @@
+<state_snapshot>
+  <primary_request_and_intent>
+    사용자께서는 최근에 `index.html` 파일을 편집하여 `camera`와 `scene` 변수를 전역에 노출하고, 프린트 오류를 수정하며, 404 문제를 해결하기 위해 favicon을 생성한 상태입니다. 그 결과를 구조화된 XML로 보고해 주도록 요청하셨습니다.
+  </primary_request_and_intent>
+  <key_technical_concepts>
+    Three.js r150 시나리오와 카메라 설정<br/>
+    전역 `window`를 활용한 `camera` 및 `scene` 노출<br/>
+    FPS 카운터와 애니메이션 루프 관리<br/>
+    플레이어 이동 및 장애물 충돌 처리<br/>
+    무기, 조준, 총알 시스템<br/>
+    키/마우스 이벤트 처리<br/>
+    캔버스 리사이즈 및 픽셀 비율 조정<br/>
+    Favicon 생성으로 404 해결
+  </key_technical_concepts>
+  <files_and_code_sections>
+    <file name="Z:\Projects\MyGame\index.html">
+      <description>camera를 전역에 노출하도록 수정.</description>
+      <code_snippet>
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
+window.camera = camera;
+camera.position.set(0, 6, 12);
+      </code_snippet>
+    </file>
+    <file name="Z:\Projects\MyGame\favicon.ico">
+      <description>비어 있는 favicon 파일로 404 오류 방지.</description>
+      <code_snippet>
+/*
+ * placeholder favicon
+ */
+      </code_snippet>
+    </file>
+  </files_and_code_sections>
+  <errors_and_fixes>
+    <error>
+      <message>ReferenceError: camera is not defined</message>
+      <fix>로컬에서 `const camera` 선언 후 `window.camera`에 할당해 전역 노출.</fix>
+    </error>
+    <error>
+      <message>ReferenceError: scene is not defined</message>
+      <fix>전역에 `window.scene = scene;` 를 추가해 노출(코드에 존재).</fix>
+    </error>
+    <error>
+      <message>404 Not Found for /favicon.ico</message>
+      <fix>빈 favicon 파일 생성 및 비워 둠.</fix>
+    </error>
+  </errors_and_fixes>
+  <problem_solving>
+    - `camera` 변수의 스코프 문제를 해결하기 위해 `const camera` 선언 및 `window.camera` 할당을 추가.
+    - 기존 `animate` 루프를 중복 제거해 첫 번째 스크립트 부분에만 남겨 효율성 확보.
+    - `favicon.ico` 파일을 생성해 브라우저 404 오류 예방.
+  </problem_solving>
+  <all_user_messages>
+    1. `index.html` 및 `favicon.ico` 파일 전체 내용을 제공.
+    2. 편집 의도와 변경 사항 요청.
+    3. 최종 상태를 XML 형태로 요청.
+  </all_user_messages>
+  <pending_tasks>
+    없음
+  </pending_tasks>
+  <current_work>
+    `index.html` 파일에 `camera` 전역 노출 코드와 `favicon.ico` 파일이 정상적으로 존재.
+  </current_work>
+  <next_step>
+    없는(사용자가 별도 요청 없음)
+  </next_step>
+</state_snapshot>
