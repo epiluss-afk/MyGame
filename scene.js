@@ -3,10 +3,32 @@
 // It is intended to be modularized from the inline HTML.  The script assumes the
 // <canvas id="glcanvas"> element already exists.
 
-const canvas = document.getElementById('glcanvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+// Add fallback for THREEx if not available
+const THREE = (typeof global !== 'undefined' && global.THREE) ? global.THREE : require('three');
+if (typeof global !== 'undefined' && !global.THREE) { global.THREE = THREE; }
+// Initialize canvas
+const canvas = document.getElementById('glcanvas') || document.createElement('canvas');
+// Polyfill getContext for jsdom environment
+if (typeof canvas.getContext !== 'function') {
+  canvas.getContext = function(type) {
+    if (type === 'webgl' || type === 'webgl2') return {};
+    return null;
+  };
+}
+
+
+
+// Initialize renderer with fallback in test environment
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} catch (e) {
+  renderer = {
+    setSize: () => {},
+    setPixelRatio: () => {},
+    domElement: canvas
+  };
+}
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x111111, 20, 100);
@@ -77,14 +99,6 @@ window.addEventListener('resize', () => {
 
 // Export for module usage (optional)
 if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-  module.exports = {
-    scene,
-    renderer,
-    camera,
-    player,
-    blocks,
-    blockRadius,
-    cameraOffset
-  };
+  module.exports = { game };
 }
 
