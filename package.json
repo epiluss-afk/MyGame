@@ -1,0 +1,16 @@
+{
+  "name": "mygame",
+  "version": "1.0.0",
+  "description": "Three.js demo and C++ game skeleton",
+  "main": "scene.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.6.0"
+  },
+  "dependencies": {
+    "jest-environment-jsdom": "^30.5.0",
+    "three": "^0.185.1"
+  }
+}
